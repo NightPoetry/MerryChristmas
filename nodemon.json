@@ -1,0 +1,24 @@
+
+{
+  "watch": [
+    "server.js",
+    "router/**/*.js",
+    "modules/**/*.js"
+  ],
+  "ignore": [
+    "node_modules",
+    "public",
+    "storage",
+    "logs",
+    "*.test.js"
+  ],
+  "ext": "js,json",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": 500,
+  "verbose": true,
+  "execMap": {
+    "js": "node"
+  }
+}
