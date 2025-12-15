@@ -350,8 +350,8 @@ A: 修改 `router/middleware/errorHandler.js` 中的 `onError` 函数
 
 ## 📞 联系方式
 
-- 问题反馈：[GitHub Issues](https://github.com/yourname/merrychristmas/issues)
-- 邮箱：your.email@example.com
+- 问题反馈：[GitHub Issues](https://github.com/NightPoetry/MerryChristmas/issues)
+- 邮箱：NightPoetry2025@outlook.com
 
 ---
 
