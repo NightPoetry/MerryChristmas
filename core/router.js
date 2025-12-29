@@ -379,36 +379,7 @@ function loadRouteFile(filePath, fileName) {
   
   // 自动包装为 async 函数
   const handler = async function(ctx) {
-    // 注入静态资源管理方法
-    const { getStaticResourceManager } = require('./utils/static');
-    const staticManager = getStaticResourceManager({
-      staticDir: path.join(process.cwd(), 'static')
-    });
-    
-    // 发送静态资源响应
-    ctx.sendFile = async (level, filePath) => {
-      await staticManager.sendFile(ctx, level, filePath);
-    };
-    
-    // 获取静态资源内容（用于二次加工）
-    ctx.getFile = async (level, filePath, options) => {
-      return await staticManager.getFile(level, filePath, options);
-    };
-    
-    // 保存文件到静态资源目录
-    ctx.saveFile = async (level, filePath, content, options) => {
-      return await staticManager.saveFile(level, filePath, content, options);
-    };
-    
-    // 检查文件是否存在
-    ctx.fileExists = async (level, filePath) => {
-      return await staticManager.exists(level, filePath);
-    };
-    
-    // 获取文件信息
-    ctx.getFileInfo = async (level, filePath) => {
-      return await staticManager.stat(level, filePath);
-    };
+    // 移除静态资源管理方法，因为静态目录已被删除
     
     const res = await routeHandler(ctx);
     
