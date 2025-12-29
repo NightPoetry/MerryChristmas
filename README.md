@@ -44,36 +44,18 @@ npm start
 
 ```
 MerryChristmas/
-├── docs/                          # 文档
-│   ├── 路由编写规则手册.md
-│   └── 中间件编写规则手册.md
-├── modules/                       # 业务模块
-│   └── module.js
-├── public/                        # 静态文件
-├── router/                        # 路由系统
-│   ├── middleware/               # 中间件
-│   │   ├── logger.js
-│   │   ├── jwtAuth.js
-│   │   ├── transaction.js
-│   │   └── ...
-│   ├── private/                  # 私有路由（127.0.0.1）
-│   │   └── root/
-│   ├── public/                   # 公开路由
-│   │   ├── root/
-│   │   │   ├── login.js
-│   │   │   └── hello.js
-│   │   └── api/
-│   ├── protected/                # 受保护路由（需JWT）
-│   │   └── api/
-│   │       └── users/
-│   │           └── profile.js
+├── core/                          # 核心模块
+│   ├── middleware/               # 中间件目录
 │   └── router.js                 # 路由加载器
-├── storage/                      # 存储目录
-├── .env.example                  # 环境变量模板
+├── docs/                          # 文档
+├── router/                        # 项目路由
+│   ├── private/                  # 私有路由（127.0.0.1）
+│   ├── public/                   # 公开路由
+│   └── protected/                # 受保护路由
 ├── .gitignore
 ├── nodemon.json                  # 开发环境配置
 ├── package.json
-└── server.js                     # 服务器入口
+└── server.js                     # 项目入口
 ```
 
 ---
@@ -89,24 +71,20 @@ MerryChristmas/
 
 ### 🔧 中间件系统
 
-- **三种模式** - 简单、洋葱、生命周期
-- **洋葱模型** - 完整的请求/响应拦截
+- **灵活配置** - 支持多种中间件模式
 - **自动排序** - 基于 `order` 字段自动排序
 - **路径过滤** - 支持 `exclude` 排除特定路径
 
 ### 🛡️ 安全特性
 
-- **JWT 认证** - 内置 JWT 中间件
+- **认证机制** - 支持多种认证方式
 - **权限控制** - 基于角色和权限的访问控制
-- **数据脱敏** - 自动脱敏敏感字段
-- **限流保护** - 防止 API 滥用
+- **防护机制** - 内置多种安全防护措施
 
 ### 📊 其他特性
 
-- **事务管理** - 自动管理数据库事务
-- **审计日志** - 完整的操作日志记录
-- **错误处理** - 统一的错误处理机制
-- **响应格式化** - 统一的响应格式
+- **统一处理** - 统一的错误处理和响应格式化
+- **可扩展性** - 易于扩展和定制
 
 ---
 
@@ -143,12 +121,16 @@ const config = {
 };
 
 function profile(ctx) {
+  // 获取当前用户信息
   const userId = ctx.user.id;
   
-  const [user] = ctx.transaction.query(
-    'SELECT * FROM users WHERE id = ?',
-    [userId]
-  );
+  // 实现业务逻辑
+  const user = {
+    id: userId,
+    name: '示例用户',
+    email: 'user@example.com',
+    phone: '13800138000'
+  };
   
   if (!user) {
     ctx.throw(404, '用户不存在');
@@ -164,44 +146,65 @@ function profile(ctx) {
 
 ---
 
-## 🔧 编写中间件
+## 🔧 中间件系统
 
-### 简单中间件
+### 中间件命名空间
 
-创建文件：`router/middleware/logger.js`
+可以通过 `utils.middleware.xxxx` 命名空间直接调用内置中间件：
+
+```javascript
+const { middleware } = require('merrychristmas-server');
+
+// 使用内置中间件配置
+console.log('CORS 中间件:', middleware.cors.config);
+console.log('Logger 中间件:', middleware.logger.config);
+```
+
+### 编写中间件
+
+创建文件：`core/middleware/custom.js`
 
 ```javascript
 const config = {
   level: ['global'],
-  order: 1
+  order: 5,
+  enabled: true,
+  description: '自定义中间件'
 };
 
-function handler(ctx) {
-  console.log(`${ctx.method} ${ctx.url}`);
+async function handler(ctx) {
+  console.log(`${ctx.method} ${ctx.url} - 自定义中间件执行`);
 }
+
+// 导出中间件，符合 npm 包规范
+module.exports = {
+  config,
+  handler
+};
 ```
 
-### 洋葱中间件
-
-创建文件：`router/middleware/transaction.js`
+### 手动添加中间件
 
 ```javascript
-const config = {
-  level: ['protected'],
-  order: 60
-};
+const MerryChristmasServer = require('merrychristmas-server');
+const server = new MerryChristmasServer();
 
-function before(ctx) {
-  ctx.transaction = db.beginTransaction();
-}
+// 添加自定义中间件
+server.use(async (ctx, next) => {
+  const startTime = Date.now();
+  await next();
+  const ms = Date.now() - startTime;
+  console.log(`${ctx.method} ${ctx.url} - ${ms}ms`);
+});
 
-function after(ctx) {
-  if (ctx.status < 400) {
-    ctx.transaction.commit();
-  } else {
-    ctx.transaction.rollback();
-  }
-}
+// 链式调用
+server.use(async (ctx, next) => {
+  console.log('第二个中间件');
+  await next();
+});
+
+// 启动服务器
+server.start();
 ```
 
 更多示例请查看：[中间件编写规则手册](./docs/中间件编写规则手册.md)
@@ -229,76 +232,6 @@ router/public/api/status.js
 ```
 router/public/admin:3001/dashboard.js
 → http://admin.localhost:3001/dashboard
-```
-
----
-
-## 🧪 测试
-
-```bash
-# 运行所有测试
-npm test
-
-# 运行特定测试
-npm test -- router.test.js
-
-# 查看覆盖率
-npm test -- --coverage
-```
-
----
-
-## 📦 生产部署
-
-### 1. 构建
-
-```bash
-# 安装生产依赖
-npm install --production
-```
-
-### 2. 配置
-
-```bash
-# 设置生产环境变量
-export NODE_ENV=production
-export PORT=3000
-export JWT_SECRET=your-production-secret
-```
-
-### 3. 启动
-
-```bash
-# 使用 PM2（推荐）
-pm2 start server.js --name merrychristmas
-
-# 或直接启动
-node server.js
-```
-
-### 4. PM2 配置（推荐）
-
-创建 `ecosystem.config.js`：
-
-```javascript
-module.exports = {
-  apps: [{
-    name: 'merrychristmas',
-    script: './server.js',
-    instances: 'max',
-    exec_mode: 'cluster',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3000
-    }
-  }]
-};
-```
-
-启动：
-
-```bash
-pm2 start ecosystem.config.js
 ```
 
 ---
@@ -344,7 +277,38 @@ A: 在中间件文件的 config 中设置：`enabled: false`
 
 ### Q: 如何自定义错误格式？
 
-A: 修改 `router/middleware/errorHandler.js` 中的 `onError` 函数
+A: 修改 `core/middleware/errorHandler.js` 中的 `onError` 函数
+
+### Q: 如何手动添加中间件？
+
+A: 使用服务器实例的 `use()` 或 `unshift()` 方法：
+
+```javascript
+const server = new MerryChristmasServer();
+
+// 添加到中间件堆栈末尾
+server.use(async (ctx, next) => {
+  console.log('自定义中间件');
+  await next();
+});
+
+// 添加到中间件堆栈最前面
+server.unshift(async (ctx, next) => {
+  console.log('最前面的中间件');
+  await next();
+});
+```
+
+### Q: 如何使用中间件命名空间？
+
+A: 通过 `utils.middleware.xxxx` 直接访问：
+
+```javascript
+const { middleware } = require('merrychristmas-server');
+
+console.log('内置中间件:', Object.keys(middleware));
+console.log('CORS 中间件:', middleware.cors.config);
+```
 
 ---
 

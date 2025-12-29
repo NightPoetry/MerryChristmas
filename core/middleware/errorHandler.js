@@ -77,3 +77,10 @@ function getErrorCode(status) {
   
   return codes[status] || 'UNKNOWN_ERROR';
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  onError
+};

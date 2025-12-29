@@ -41,3 +41,9 @@ function generateRequestId() {
   const random = crypto.randomBytes(6).toString('hex');
   return `${timestamp}-${random}`;
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config
+};

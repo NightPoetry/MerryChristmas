@@ -77,3 +77,14 @@ function sendToMonitoring(data) {
   // 这里可以发送到监控系统（如 Prometheus、Grafana 等）
   // console.log('📊 性能数据:', data);
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  before,
+  after,
+  onRequest,
+  onResponse,
+  onFinish
+};

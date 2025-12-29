@@ -85,3 +85,12 @@ function onError(ctx, error) {
     }
   }
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  before,
+  after,
+  onError
+};

@@ -74,3 +74,9 @@ setInterval(() => {
     }
   }
 }, 300000); // 每5分钟清理一次
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config
+};

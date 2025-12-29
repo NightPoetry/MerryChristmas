@@ -12,7 +12,7 @@ const vm = require('vm');
  */
 
 function detectMiddlewareType(module) {
-  if (module.onRequest || module.onResponse || module.onFinish) {
+  if (module.onRequest || module.onResponse || module.onError || module.onFinish) {
     return 'lifecycle';
   }
   if (module.before || module.after) {
@@ -28,44 +28,94 @@ function detectMiddlewareType(module) {
  * 加载并标准化中间件模块
  */
 function loadMiddlewareFile(filePath) {
-  const code = fs.readFileSync(filePath, 'utf-8');
-  
-  // 创建沙箱环境
-  const sandbox = {
-    console,
-    require,
-    process,
-    __dirname: path.dirname(filePath),
-    __filename: filePath
-  };
-  
-  // 执行代码
-  vm.createContext(sandbox);
-  vm.runInContext(code, sandbox);
-  
-  // 提取 config 和处理函数
-  const config = sandbox.config;
-  
-  if (!config) {
-    throw new Error('中间件文件缺少 config 配置');
-  }
-  
-  // 收集处理函数（自动包装为 async）
-  const result = { config };
-  
-  ['handler', 'before', 'after', 'onRequest', 'onResponse', 'onError', 'onFinish'].forEach(key => {
-    if (typeof sandbox[key] === 'function') {
-      // 自动包装为 async 函数
-      result[key] = async function(...args) {
-        return await sandbox[key](...args);
-      };
+  try {
+    // 读取文件内容
+    const code = fs.readFileSync(filePath, 'utf-8');
+    
+    // 使用函数包装的方式来提取变量
+    // 这种方式可以正确处理 const 声明
+    const fullCode = `
+      (function() {
+        const extracted = {};
+        
+        // 执行原始代码
+        ${code}
+        
+        // 提取变量
+        if (typeof config !== 'undefined') extracted.config = config;
+        if (typeof handler !== 'undefined') extracted.handler = handler;
+        if (typeof before !== 'undefined') extracted.before = before;
+        if (typeof after !== 'undefined') extracted.after = after;
+        if (typeof onRequest !== 'undefined') extracted.onRequest = onRequest;
+        if (typeof onResponse !== 'undefined') extracted.onResponse = onResponse;
+        if (typeof onError !== 'undefined') extracted.onError = onError;
+        if (typeof onFinish !== 'undefined') extracted.onFinish = onFinish;
+        
+        return extracted;
+      })()`;
+    
+    // 创建沙箱环境
+    const sandbox = {
+      console,
+      require,
+      process,
+      __dirname: path.dirname(filePath),
+      __filename: filePath,
+      Buffer,
+      setTimeout,
+      setInterval,
+      clearTimeout,
+      clearInterval
+    };
+    
+    // 使用 vm.Script 和 runInNewContext 执行代码
+    const script = new vm.Script(fullCode);
+    const middleware = script.runInNewContext(sandbox);
+    
+    if (!middleware.config) {
+      throw new Error('中间件文件缺少 config 配置');
     }
-  });
-  
-  return result;
+    
+    // 自动包装为 async 函数
+    const asyncResult = { config: middleware.config };
+    
+    ['handler', 'before', 'after', 'onRequest', 'onResponse', 'onError', 'onFinish'].forEach(key => {
+      if (typeof middleware[key] === 'function') {
+        // 对于handler函数，如果它接受两个参数（ctx和next），自动注入next调用
+        if (key === 'handler') {
+          const originalHandler = middleware[key];
+          asyncResult[key] = async function(ctx, next) {
+            // 检查函数参数数量
+            if (originalHandler.length === 2) {
+              // 如果handler期望next参数，自动调用
+              return await originalHandler(ctx, next);
+            } else {
+              // 否则直接执行handler，框架会自动处理next
+              const result = await originalHandler(ctx);
+              // 如果有next参数，调用它
+              if (next) {
+                await next();
+              }
+              return result;
+            }
+          };
+        } else {
+          // 其他钩子函数直接包装
+          asyncResult[key] = async function(...args) {
+            return await middleware[key](...args);
+          };
+        }
+      }
+    });
+    
+    return asyncResult;
+  } catch (error) {
+    console.error(`加载中间件文件 ${filePath} 失败:`, error.message);
+    throw error;
+  }
 }
 
-function loadMiddlewares() {
+function loadMiddlewares(routerDir) {
   const middlewares = {
     private: [],
     public: [],
@@ -73,7 +123,7 @@ function loadMiddlewares() {
     global: []
   };
 
-  const middlewareDir = path.join(__dirname, 'middleware');
+  const middlewareDir = path.join(routerDir, 'middleware');
   
   if (!fs.existsSync(middlewareDir)) {
     console.warn('⚠ middleware 目录不存在');
@@ -188,24 +238,30 @@ function composeMiddlewares(middlewareList) {
     }
 
     try {
+      // 执行 onRequest 钩子（最先执行）
       for (const hook of onRequestHooks) {
         await hook(ctx);
       }
 
+      // 执行 before 中间件（请求前处理）
       for (const hook of beforeHooks) {
-        await hook(ctx);
+        await hook(ctx); // 不需要 next 参数，按顺序执行
       }
 
+      // 执行业务路由处理函数
       await next();
 
+      // 执行 after 中间件（响应后处理）
       for (const hook of afterHooks) {
-        await hook(ctx);
+        await hook(ctx); // 不需要 next 参数，按顺序执行
       }
 
+      // 执行 onResponse 钩子（响应前）
       for (const hook of onResponseHooks) {
         await hook(ctx);
       }
 
+      // 注册 onFinish 钩子（异步，响应后执行）
       if (onFinishHooks.length > 0) {
         ctx.res.on('finish', async () => {
           for (const hook of onFinishHooks) {
@@ -219,6 +275,7 @@ function composeMiddlewares(middlewareList) {
       }
 
     } catch (error) {
+      // 执行 onError 钩子
       for (const hook of onErrorHooks) {
         try {
           await hook(ctx, error);
@@ -259,6 +316,34 @@ function parsePortFromFolderName(folderName) {
 function loadRouteFile(filePath, fileName) {
   const code = fs.readFileSync(filePath, 'utf-8');
   
+  // 使用函数包装的方式来提取变量
+  // 这种方式可以正确处理 const 声明
+  const safeFileName = fileName.replace(/-/g, '_');
+  const fullCode = `
+    (function() {
+      const extracted = {};
+      
+      // 执行原始代码
+      ${code}
+      
+      // 提取变量
+      if (typeof config !== 'undefined') extracted.config = config;
+      
+      // 处理函数名，支持文件名包含连字符的情况
+      let routeHandler;
+      try {
+        // 尝试直接获取（适用于无连字符的文件名）
+        routeHandler = ${safeFileName};
+      } catch (e) {
+        // 尝试通过 this 获取（适用于有连字符的文件名）
+        routeHandler = this[${JSON.stringify(fileName)}];
+      }
+      
+      if (typeof routeHandler === 'function') extracted.handler = routeHandler;
+      
+      return extracted;
+    })()`;
+  
   // 创建沙箱环境
   const sandbox = {
     console,
@@ -273,35 +358,68 @@ function loadRouteFile(filePath, fileName) {
     clearInterval
   };
   
-  // 执行代码
-  vm.createContext(sandbox);
-  vm.runInContext(code, sandbox);
+  // 使用 vm.Script 和 runInNewContext 执行代码
+  const script = new vm.Script(fullCode);
+  const extracted = script.runInNewContext(sandbox);
   
-  // 验证并提取
-  if (!sandbox.config) {
+  // 从提取的对象中获取变量
+  const config = extracted.config;
+  if (!config) {
     throw new Error('路由文件缺少 config 配置');
   }
   
-  if (!sandbox.config.method) {
+  if (!config.method) {
     throw new Error('路由文件的 config 中缺少 method 字段');
   }
   
-  if (typeof sandbox[fileName] !== 'function') {
+  const routeHandler = extracted.handler;
+  if (typeof routeHandler !== 'function') {
     throw new Error(`路由文件中未找到同名方法: ${fileName}`);
   }
   
   // 自动包装为 async 函数
   const handler = async function(ctx) {
-    const result = await sandbox[fileName](ctx);
+    // 注入静态资源管理方法
+    const { getStaticResourceManager } = require('./utils/static');
+    const staticManager = getStaticResourceManager({
+      staticDir: path.join(process.cwd(), 'static')
+    });
+    
+    // 发送静态资源响应
+    ctx.sendFile = async (level, filePath) => {
+      await staticManager.sendFile(ctx, level, filePath);
+    };
+    
+    // 获取静态资源内容（用于二次加工）
+    ctx.getFile = async (level, filePath, options) => {
+      return await staticManager.getFile(level, filePath, options);
+    };
+    
+    // 保存文件到静态资源目录
+    ctx.saveFile = async (level, filePath, content, options) => {
+      return await staticManager.saveFile(level, filePath, content, options);
+    };
+    
+    // 检查文件是否存在
+    ctx.fileExists = async (level, filePath) => {
+      return await staticManager.exists(level, filePath);
+    };
+    
+    // 获取文件信息
+    ctx.getFileInfo = async (level, filePath) => {
+      return await staticManager.stat(level, filePath);
+    };
+    
+    const res = await routeHandler(ctx);
     
     // 如果返回了值且未设置 body，自动设置
-    if (result !== undefined && ctx.body === undefined) {
-      ctx.body = result;
+    if (res !== undefined && ctx.body === undefined) {
+      ctx.body = res;
     }
   };
   
   return {
-    config: sandbox.config,
+    config,
     handler
   };
 }
@@ -327,7 +445,14 @@ function scanDirectoryRecursive(dirPath, currentPath = '') {
         const fileName = item.replace('.js', '');
         const { config, handler } = loadRouteFile(itemPath, fileName);
         
-        const fullPath = currentPath ? `${currentPath}/${fileName}` : `/${fileName}`;
+        // 生成路由路径，对于root目录下的文件，路径不包含root
+        let fullPath;
+        if (fileName === 'id') {
+          // 特殊处理：如果文件名为id，生成动态路由 /:id
+          fullPath = currentPath ? `${currentPath}/:id` : `/:id`;
+        } else {
+          fullPath = currentPath ? `${currentPath}/${fileName}` : `/${fileName}`;
+        }
 
         routes.push({
           path: fullPath,
@@ -345,7 +470,13 @@ function scanDirectoryRecursive(dirPath, currentPath = '') {
         console.error(`      ${error.message}`);
       }
     } else if (stat.isDirectory()) {
-      const newPath = currentPath ? `${currentPath}/${item}` : `/${item}`;
+      // 如果目录名为root，则currentPath保持不变，否则添加目录名
+      let newPath;
+      if (item === 'root') {
+        newPath = currentPath; // 对于root目录，路径不包含root
+      } else {
+        newPath = currentPath ? `${currentPath}/${item}` : `/${item}`;
+      }
       const subRoutes = scanDirectoryRecursive(itemPath, newPath);
       routes.push(...subRoutes);
     }
@@ -375,6 +506,12 @@ function createVhost(hostname, app) {
 function createSubdomainApp(routes, type, middlewares) {
   const app = new Koa();
 
+  // 添加调试中间件
+  app.use(async (ctx, next) => {
+    console.log(`收到请求: ${ctx.method} ${ctx.path} (${type} 子域名应用)`);
+    await next();
+  });
+
   const globalMiddlewares = middlewares.global || [];
   app.use(composeMiddlewares(globalMiddlewares));
 
@@ -385,6 +522,7 @@ function createSubdomainApp(routes, type, middlewares) {
 
   routes.forEach(({ path: routePath, method, handler, config, fileName }) => {
     const wrappedHandler = async (ctx) => {
+      console.log(`执行路由: ${method.toUpperCase()} ${routePath} (${fileName})`);
       ctx.state.routeConfig = config;
       await handler(ctx);
     };
@@ -433,6 +571,18 @@ function createSubdomainApp(routes, type, middlewares) {
 
 /**
  * ============================================
+ * 调试中间件
+ * ============================================
+ */
+
+async function debugMiddleware(ctx, next) {
+  console.log(`中间件执行开始: ${ctx.method} ${ctx.path}`);
+  await next();
+  console.log(`中间件执行结束: ${ctx.method} ${ctx.path} ${ctx.status}`);
+}
+
+/**
+ * ============================================
  * 主路由初始化函数
  * ============================================
  */
@@ -440,16 +590,18 @@ function createSubdomainApp(routes, type, middlewares) {
 async function initializeRoutes(mainApp, options = {}) {
   const {
     rootDomain = 'localhost',
-    defaultPort = 3000
+    defaultPort = 3000,
+    routerDir = path.join(process.cwd(), 'router')
   } = options;
 
-  const routerDir = __dirname;
+  // 使用传入的routerDir或默认值
 
   console.log('\n========== 开始加载路由系统 ==========');
   console.log(`根域名: ${rootDomain}`);
   console.log(`默认端口: ${defaultPort}\n`);
 
-  const middlewares = loadMiddlewares();
+  const middlewares = loadMiddlewares(routerDir);
+  mainApp.use(debugMiddleware);
   mainApp.use(composeMiddlewares(middlewares.global));
 
   const types = ['private', 'public', 'protected'];
@@ -469,7 +621,7 @@ async function initializeRoutes(mainApp, options = {}) {
       return;
     }
 
-    console.log(`📁 ${type.toUpperCase()} 路由配置:`);
+    console.log(`${type.toUpperCase()} 路由配置:`);
 
     const items = fs.readdirSync(typeDir);
 
@@ -483,7 +635,7 @@ async function initializeRoutes(mainApp, options = {}) {
       const targetPort = customPort || defaultPort;
 
       if (subdomainName === 'root') {
-        console.log(`\n   📌 根域名路由 (${rootDomain}:${targetPort}):`);
+        console.log(`\n   根域名路由 (${rootDomain}:${targetPort}):`);
         const rootRoutes = scanDirectoryRecursive(itemPath, '');
 
         if (rootRoutes.length === 0) {
@@ -502,7 +654,7 @@ async function initializeRoutes(mainApp, options = {}) {
         return;
       }
 
-      console.log(`\n   🌐 子域名: ${subdomainName}.${rootDomain}:${targetPort}`);
+      console.log(`\n   子域名: ${subdomainName}.${rootDomain}:${targetPort}`);
 
       const subdomainRoutes = scanDirectoryRecursive(itemPath, '');
 
@@ -551,16 +703,23 @@ async function initializeRoutes(mainApp, options = {}) {
 
     configs.forEach(config => {
       const { type, subdomain, routes, isRoot } = config;
-      const typeLabel = type === 'private' ? '🔒' : 
-                       type === 'protected' ? '🔐' : '🔓';
+      const typeLabel = type === 'private' ? '[PRIVATE]' : 
+                       type === 'protected' ? '[PROTECTED]' : '[PUBLIC]';
 
       if (isRoot) {
+        // 添加调试中间件
+        app.use(async (ctx, next) => {
+          console.log(`收到根域名请求: ${ctx.method} ${ctx.path} (${type} 路由)`);
+          await next();
+        });
+
         app.use(composeMiddlewares(middlewares[type] || []));
 
         const router = new Router();
 
         routes.forEach(({ path: routePath, method, handler, config, fileName }) => {
           const wrappedHandler = async (ctx) => {
+            console.log(`执行根域名路由: ${method.toUpperCase()} ${routePath} (${fileName})`);
             ctx.state.routeConfig = config;
             await handler(ctx);
           };
@@ -568,21 +727,27 @@ async function initializeRoutes(mainApp, options = {}) {
           switch (method) {
             case 'get':
               router.get(routePath, wrappedHandler);
+              console.log(`注册根域名路由: GET ${routePath}`);
               break;
             case 'post':
               router.post(routePath, wrappedHandler);
+              console.log(`注册根域名路由: POST ${routePath}`);
               break;
             case 'put':
               router.put(routePath, wrappedHandler);
+              console.log(`注册根域名路由: PUT ${routePath}`);
               break;
             case 'patch':
               router.patch(routePath, wrappedHandler);
+              console.log(`注册根域名路由: PATCH ${routePath}`);
               break;
             case 'delete':
               router.del(routePath, wrappedHandler);
+              console.log(`注册根域名路由: DELETE ${routePath}`);
               break;
             case 'all':
               router.all(routePath, wrappedHandler);
+              console.log(`注册根域名路由: ALL ${routePath}`);
               break;
           }
         });
@@ -641,7 +806,7 @@ function startServerOnPort(app, port, name) {
   return new Promise((resolve, reject) => {
     try {
       const server = app.listen(port, () => {
-        console.log(`🚀 ${name} 服务运行在端口 ${port}`);
+        console.log(`${name} 服务运行在端口 ${port}`);
         resolve(server);
       });
 

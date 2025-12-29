@@ -106,3 +106,11 @@ setInterval(() => {
     console.log(`🗑️ 清理过期缓存: ${cleaned} 条`);
   }
 }, 600000); // 每10分钟清理一次
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  before,
+  after
+};

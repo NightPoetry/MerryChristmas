@@ -136,3 +136,13 @@ function writeAuditLog(audit) {
     console.error('✗ 写入审计日志失败:', error.message);
   }
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  before,
+  after,
+  onError,
+  onFinish
+};

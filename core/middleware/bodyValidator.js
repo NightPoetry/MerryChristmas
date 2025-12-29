@@ -108,3 +108,10 @@ function before(ctx) {
   
   console.log('✓ 请求体验证通过');
 }
+
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  before
+};

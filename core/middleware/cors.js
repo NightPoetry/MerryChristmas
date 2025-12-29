@@ -13,7 +13,7 @@ const config = {
   description: 'CORS 跨域处理'
 };
 
-function handler(ctx) {
+async function handler(ctx) {
   const origin = ctx.get('Origin');
   
   // 允许的源列表
@@ -42,5 +42,12 @@ function handler(ctx) {
   // 处理 OPTIONS 预检请求
   if (ctx.method === 'OPTIONS') {
     ctx.status = 204;
+    return;
   }
 }
+
+// 导出中间件，符合npm包规范
+module.exports = {
+  config,
+  handler
+};
