@@ -1,0 +1,41 @@
+{
+  "name": "merrychristmas-server",
+  "version": "1.0.0",
+  "description": "MerryChristmas 服务器核心组件 - 基于 Koa.js 的轻量级、可扩展的 Node.js 服务器框架",
+  "main": "server.js",
+  "bin": {
+    "merrychristmas": "cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "koa",
+    "router",
+    "framework",
+    "api",
+    "server"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@koa/cors": "^4.0.0",
+    "@koa/multer": "^3.0.2",
+    "@koa/router": "^12.0.1",
+    "dotenv": "^16.3.1",
+    "ejs": "^3.1.10",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "koa": "^2.14.2",
+    "koa-bodyparser": "^4.4.1",
+    "koa-compress": "^5.1.1",
+    "koa-ratelimit": "^5.1.0",
+    "koa-static": "^5.0.0",
+    "mime": "^4.1.0",
+    "mysql2": "^3.6.5",
+    "sqlite3": "^5.1.7"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

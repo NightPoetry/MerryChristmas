@@ -13,25 +13,22 @@ MerryChristmas 服务器是一个基于 Koa.js 的轻量级、可扩展的 Node.
 
 ## 安装
 
-### 本地开发
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd MerryChristmas
-
-# 安装依赖
-npm install
-
-# 启动服务器
-npm start
-```
-
 ### 作为 npm 包使用
 
 ```bash
 # 安装包
 npm install merrychristmas-server
+```
+
+### 本地开发
+
+```bash
+# 克隆 core 仓库
+git clone <core-repository-url> merrychristmas-core
+cd merrychristmas-core
+
+# 安装依赖
+npm install
 ```
 
 ## 快速开始
@@ -738,6 +735,71 @@ MIT
 - 支持作为 npm 包使用
 - 完善的错误处理机制
 - 详细的 API 文档
+
+## CLI 工具
+
+### 安装 CLI
+
+```bash
+npm install -g merrychristmas-server
+```
+
+### 使用 CLI 创建默认文件夹结构
+
+```bash
+# 在当前目录创建默认文件夹结构
+merrychristmas init
+
+# 在指定目录创建默认文件夹结构
+merrychristmas init <target-directory>
+```
+
+### 默认文件夹结构
+
+执行 `merrychristmas init` 命令后，将创建以下默认文件夹结构：
+
+```
+.
+├── router/                    # 路由目录
+│   ├── private/               # 私有路由（仅本地访问）
+│   ├── public/                # 公共路由（无需认证）
+│   └── protected/             # 受保护路由（需要 JWT 认证）
+│       ├── root/              # 根域名路由
+│       └── api/               # api 子域名路由
+├── storage/                   # 存储目录
+│   ├── private/               # 私有存储
+│   ├── protected/             # 受保护存储
+│   └── public/                # 公共存储
+├── static/                    # 静态文件目录
+│   ├── private/               # 私有静态资源
+│   ├── protected/             # 受保护静态资源
+│   └── public/                # 公共静态资源
+└── middleware/                # 自定义中间件目录
+```
+
+### CLI 命令说明
+
+#### `merrychristmas init [directory]`
+
+创建默认的项目文件夹结构。
+
+- **directory**: 可选，指定要创建结构的目录，默认为当前目录
+
+## 项目结构说明
+
+### 核心文件
+
+- `server.js`: 服务器主类，负责服务器的初始化、启动和关闭
+- `router.js`: 路由系统，负责路由的自动加载和处理
+- `middleware/`: 内置中间件目录，包含各种功能中间件
+
+### 使用流程
+
+1. **安装包**: `npm install merrychristmas-server`
+2. **初始化项目结构**: `merrychristmas init`
+3. **编写路由文件**（在 `router/` 目录下）
+4. **编写自定义中间件**（可选，在 `middleware/` 目录下）
+5. **创建主入口文件**，实例化并启动服务器
 
 ## 联系方式
 
