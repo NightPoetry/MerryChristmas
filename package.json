@@ -11,7 +11,8 @@
     "test:all": "node generate_test_report.js --all",
     "test:report": "node test_report_server.js",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{js,json,md}\""
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "install-core": "node install-core.js"
   },
   "keywords": [
     "koa",
